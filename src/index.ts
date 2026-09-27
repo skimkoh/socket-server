@@ -1,5 +1,6 @@
 import { createServer } from "http";
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
 import { lockManager } from "./lockManager";
 import {
     ClientToServerEvents,
@@ -7,13 +8,35 @@ import {
     LockInfo,
 } from "./types";
 
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
+const JWT_SECRET = process.env.JWT_SECRET!;
+
 const httpServer = createServer();
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(
     httpServer,
     {
-        cors: { origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" },
+        cors: { origin: CLIENT_ORIGIN },
     }
 );
+
+io.use((socket, next) => {
+    const origin = socket.handshake.headers.origin;
+    if (origin !== CLIENT_ORIGIN) {
+        return next(new Error("Invalid origin"));
+    }
+
+    const token = socket.handshake.auth?.token;
+    if (typeof token !== "string") {
+        return next(new Error("Missing token"));
+    }
+
+    try {
+        socket.data.user = jwt.verify(token, JWT_SECRET);
+        next();
+    } catch {
+        next(new Error("Invalid token"));
+    }
+});
 
 io.on("connection", (socket) => {
     socket.on("lock:acquire", ({ itemId, userId, userName }, ack) => {

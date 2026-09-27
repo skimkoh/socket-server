@@ -12,6 +12,10 @@ function connectClient(): Promise<Socket> {
     return new Promise((resolve) => {
         const socket = ioClient(`http://localhost:${port}`, {
             transports: ["websocket"],
+            auth: { token: "test-token" },
+            extraHeaders: {
+                Origin: "http://localhost:3000",
+            },
         });
         socket.on("connect", () => resolve(socket));
     });
@@ -20,6 +24,22 @@ function connectClient(): Promise<Socket> {
 beforeAll(async () => {
     httpServer = createServer();
     ioServer = new Server(httpServer);
+
+    ioServer.use((socket, next) => {
+        const origin = socket.handshake.headers.origin;
+        const token = socket.handshake.auth?.token;
+
+        if (origin !== "http://localhost:3000") {
+            return next(new Error("Invalid origin"));
+        }
+
+        if (token !== "test-token") {
+            return next(new Error("Invalid token"));
+        }
+
+        socket.data.user = { userId: "alice" };
+        next();
+    });
 
     ioServer.on("connection", (socket) => {
         socket.on("lock:acquire", ({ itemId, userId, userName }, ack) => {
